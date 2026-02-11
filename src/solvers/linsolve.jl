@@ -12,6 +12,26 @@ function linsolve_updater(problem, init; internal_kwargs, coefficients, kwargs..
     return x, (; info)
 end
 
+function qr_updater(
+    problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...
+)
+    op = contract(operator(problem))
+    b = constant_term(problem)
+
+    rowinds = commoninds(op, b)
+    colinds = uniqueinds(op, b)
+    rowdim = prod(dim.(rowinds))
+    coldim = prod(dim.(colinds))
+
+    bvec = reshape(array(b, rowi...), rowdim)
+    Amat = reshape(array(op, rowi..., coli...), rowdim, coldim)
+
+    decomp_Amat = qr(Amat)
+    x = decomp_Amat \ bvec
+
+    return ITensor(x, coli...), nothing
+end
+
 """
 Compute a solution x to the linear system:
 
