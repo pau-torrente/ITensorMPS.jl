@@ -53,6 +53,26 @@ function ITensors.contract(P::AbstractProjMPO, v::ITensor)::ITensor
     return Hv
 end
 
+function ITensors.contract(P::AbstractProjMPO)::ITensor
+    itensor_map = Union{ITensor, OneITensor}[lproj(P)]
+    append!(itensor_map, P.H[site_range(P)])
+    push!(itensor_map, rproj(P))
+
+    # Reverse the contraction order of the map if
+    # the first tensor is a scalar (for example we
+    # are at the left edge of the system)
+    if dim(first(itensor_map)) == 1
+        reverse!(itensor_map)
+    end
+
+    # Apply the map
+    reduced_H = ITensor(1.0)
+    for it in itensor_map
+        reduced_H *= it
+    end
+    return reduced_H
+end
+
 """
     product(P::ProjMPO,v::ITensor)::ITensor
 
