@@ -1,7 +1,7 @@
 using KrylovKit: KrylovKit, linsolve
 using LinearAlgebra: I, qr
 
-function linsolve_updater(problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...)
+function krylov_updater(problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...)
     x, info = linsolve(
         operator(problem),
         constant_term(problem),
@@ -13,7 +13,7 @@ function linsolve_updater(problem::ReducedLinearProblem, init; internal_kwargs, 
     return x, (; info)
 end
 
-function linsolve_updater(problem::ReducedPrecondLinearProblem, init; internal_kwargs, coefficients, kwargs...)
+function krylov_updater(problem::ReducedPrecondLinearProblem, init; internal_kwargs, coefficients, kwargs...)
     x, info = linsolve(
         operator(problem.linear_problem),
         constant_term(problem.linear_problem),
@@ -72,13 +72,15 @@ Keyword arguments:
     ```
     See `KrylovKit.jl` documentation for more details on available keyword arguments.
 """
+# TODO Decide on if we should separate linsolve from KrylovKit if QR turns out to work well. 
+# Currently, the updaters are not exported, so this MUST be handled...
 function KrylovKit.linsolve(
         operator,
         constant_term::MPS,
         init::MPS,
         coefficient1::Number = false,
         coefficient2::Number = true;
-        updater = linsolve_updater,
+        updater = krylov_updater,
         updater_kwargs = (;),
         kwargs...,
     )
@@ -90,11 +92,11 @@ end
 function KrylovKit.linsolve(
         operator,
         constant_term::MPS,
-        preconditioner,
         init::MPS,
+        preconditioner,
         coefficient1::Number = false,
         coefficient2::Number = true;
-        updater = linsolve_updater,
+        updater = krylov_updater,
         updater_kwargs = (;),
         kwargs...,
     )

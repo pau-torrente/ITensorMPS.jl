@@ -56,7 +56,7 @@ using Random: Random
         precond_updater_kwargs = (; ishermitian = true, isposdef = true, tol = 1.0e-4, maxiter = 20)
         @test_throws ErrorException linsolve(H, b, P, x0; cutoff, maxdim, updater_kwargs = precond_updater_kwargs)
         x_pre = linsolve(
-            H, b, P, x0; nsweeps, cutoff, maxdim, updater_kwargs = precond_updater_kwargs
+            H, b, x0, P; nsweeps, cutoff, maxdim, updater_kwargs = precond_updater_kwargs
         )
         @test scalartype(x_pre) == elt
         @test norm(x_pre - x_c) < 1.0e-2
