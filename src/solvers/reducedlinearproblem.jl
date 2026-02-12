@@ -60,7 +60,7 @@ function ITensors.contract(reduced_problem::ReducedLinearProblem, v::ITensor)
     return contract(reduced_problem.reduced_operator, v)
 end
 
-mutable struct ReducedPrecondLinearProblem <:AbstractProjMPO
+mutable struct ReducedPrecondLinearProblem <: AbstractProjMPO
     linear_problem::ReducedLinearProblem
     preconditioner::ProjMPO
 end
@@ -72,7 +72,7 @@ function ReducedPrecondLinearProblem(operator::MPO, constant_term::MPS, precondi
 end
 
 function ReducedPrecondLinearProblem(operator::MPO, constant_terms::Vector{MPS}, preconditioner::MPO)
-    linear_problem = ReducedLinearProblem(ProjMPO(operator), [ReducedConstantTerm.(constant_terms)])
+    linear_problem = ReducedLinearProblem(ProjMPO(operator), ReducedConstantTerm.(constant_terms))
     preconditioner = ProjMPO(preconditioner)
     return ReducedPrecondLinearProblem(linear_problem, preconditioner)
 end

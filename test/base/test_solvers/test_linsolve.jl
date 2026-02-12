@@ -1,6 +1,6 @@
 @eval module $(gensym())
 using ITensors: scalartype
-using ITensorMPS: MPO, OpSum, apply, random_mps, siteinds
+using ITensorMPS: ITensorMPS, MPO, OpSum, apply, random_mps, siteinds
 using ITensorMPS.Experimental: dmrg
 using KrylovKit: linsolve
 using LinearAlgebra: norm
@@ -37,9 +37,29 @@ using Random: Random
     cutoff = 1.0e-5
     maxdim = 20
     updater_kwargs = (; tol = 1.0e-4, maxiter = 20, krylovdim = 30, ishermitian = true)
-    @test_throws ErrorException linsolve(H, b, x0; cutoff, maxdim, updater_kwargs)
-    x = linsolve(H, b, x0; nsweeps, cutoff, maxdim, updater_kwargs)
-    @test scalartype(x) == elt
-    @test norm(x - x_c) < 1.0e-2
+
+    @testset "GMRES updater" begin
+        @test_throws ErrorException linsolve(H, b, x0; cutoff, maxdim, updater_kwargs)
+        x = linsolve(H, b, x0; nsweeps, cutoff, maxdim, updater_kwargs)
+        @test scalartype(x) == elt
+        @test norm(x - x_c) < 1.0e-2
+    end
+
+    @testset "QR updater" begin
+        x_qr = linsolve(H, b, x0; nsweeps, cutoff, maxdim, updater = ITensorMPS.qr_updater)
+        @test scalartype(x_qr) == elt
+        @test norm(x_qr - x_c) < 1.0e-2
+    end
+
+    @testset "Preconditioned updater" begin
+        P = MPO(elt, s, "Id")
+        precond_updater_kwargs = (; ishermitian = true, isposdef = true, tol = 1.0e-4, maxiter = 20)
+        @test_throws ErrorException linsolve(H, b, P, x0; cutoff, maxdim, updater_kwargs = precond_updater_kwargs)
+        x_pre = linsolve(
+            H, b, P, x0; nsweeps, cutoff, maxdim, updater_kwargs = precond_updater_kwargs
+        )
+        @test scalartype(x_pre) == elt
+        @test norm(x_pre - x_c) < 1.0e-2
+    end
 end
 end

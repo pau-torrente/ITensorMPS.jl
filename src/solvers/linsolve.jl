@@ -1,4 +1,5 @@
 using KrylovKit: KrylovKit, linsolve
+using LinearAlgebra: I, qr
 
 function linsolve_updater(problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...)
     x, info = linsolve(
@@ -16,12 +17,13 @@ function linsolve_updater(problem::ReducedPrecondLinearProblem, init; internal_k
     x, info = linsolve(
         operator(problem.linear_problem),
         constant_term(problem.linear_problem),
-        operator(problem.preconditioner),
+        problem.preconditioner,
         init,
         coefficients[1],
         coefficients[2];
         kwargs...,
     )
+
     return x, (; info)
 end
 
@@ -33,20 +35,23 @@ function qr_updater(
 
     rowinds = commoninds(op, b)
     colinds = uniqueinds(op, b)
+
     rowdim = prod(dim.(rowinds))
     coldim = prod(dim.(colinds))
 
-    bvec = reshape(array(b, rowi...), rowdim)
-    Amat = reshape(array(op, rowi..., coli...), rowdim, coldim)
+    bvec = reshape(array(b, rowinds...), rowdim)
+    Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
 
-    decomp_Amat = qr(Amat)
+    shifted_Amat = coefficients[1] * I + coefficients[2] * Amat # we are solving (α₁ + α₂A)x = b
+
+    decomp_Amat = qr(shifted_Amat)
     x = decomp_Amat \ bvec
 
-    return ITensor(x, coli...), nothing
+    return noprime(ITensor(x, colinds...)), (;)
 end
 
 """
-Compute a solution x to the linear system:
+Compute  a solution x to the linear system:
 
 (a₀ + a₁ * A)*x = b
 
@@ -95,7 +100,7 @@ function KrylovKit.linsolve(
     )
     reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
     updater_kwargs = (; coefficients = (coefficient1, coefficient2), updater_kwargs...)
-    return alternating_update(reduced_problem, init; updater, updater_kwargs, kwargs...)
+    return alternating_update(reduced_precond_problem, init; updater, updater_kwargs, kwargs...)
 end
 
 

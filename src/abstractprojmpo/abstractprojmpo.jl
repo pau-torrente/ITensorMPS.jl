@@ -66,7 +66,7 @@ function ITensors.contract(P::AbstractProjMPO)::ITensor
     end
 
     # Apply the map
-    reduced_H = ITensor(1.0)
+    reduced_H = ITensor(true)
     for it in itensor_map
         reduced_H *= it
     end
