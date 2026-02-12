@@ -59,3 +59,48 @@ end
 function ITensors.contract(reduced_problem::ReducedLinearProblem, v::ITensor)
     return contract(reduced_problem.reduced_operator, v)
 end
+
+mutable struct ReducedPrecondLinearProblem <:AbstractProjMPO
+    linear_problem::ReducedLinearProblem
+    preconditioner::ProjMPO
+end
+
+function ReducedPrecondLinearProblem(operator::MPO, constant_term::MPS, preconditioner::MPO)
+    linear_problem = ReducedLinearProblem(ProjMPO(operator), [ReducedConstantTerm(constant_term)])
+    preconditioner = ProjMPO(preconditioner)
+    return ReducedPrecondLinearProblem(linear_problem, preconditioner)
+end
+
+function ReducedPrecondLinearProblem(operator::MPO, constant_terms::Vector{MPS}, preconditioner::MPO)
+    linear_problem = ReducedLinearProblem(ProjMPO(operator), [ReducedConstantTerm.(constant_terms)])
+    preconditioner = ProjMPO(preconditioner)
+    return ReducedPrecondLinearProblem(linear_problem, preconditioner)
+end
+
+function Base.copy(reduced_problem::ReducedPrecondLinearProblem)
+    return ReducedPrecondLinearProblem(
+        copy(reduced_problem.linear_problem), copy(reduced_problem.preconditioner)
+    )
+end
+
+function ITensorMPS.nsite(reduced_problem::ReducedPrecondLinearProblem)
+    return nsite(reduced_problem.linear_problem)
+end
+
+function ITensorMPS.set_nsite!(reduced_problem::ReducedPrecondLinearProblem, nsite)
+    set_nsite!(reduced_problem.linear_problem, nsite)
+    set_nsite!(reduced_problem.preconditioner, nsite)
+    return reduced_problem
+end
+
+function ITensorMPS.makeL!(reduced_problem::ReducedPrecondLinearProblem, state::MPS, position::Int)
+    makeL!(reduced_problem.linear_problem, state, position)
+    makeL!(reduced_problem.preconditioner, state, position)
+    return reduced_problem
+end
+
+function ITensorMPS.makeR!(reduced_problem::ReducedPrecondLinearProblem, state::MPS, position::Int)
+    makeR!(reduced_problem.linear_problem, state, position)
+    makeR!(reduced_problem.preconditioner, state, position)
+    return reduced_problem
+end

@@ -1,9 +1,22 @@
 using KrylovKit: KrylovKit, linsolve
 
-function linsolve_updater(problem, init; internal_kwargs, coefficients, kwargs...)
+function linsolve_updater(problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...)
     x, info = linsolve(
         operator(problem),
         constant_term(problem),
+        init,
+        coefficients[1],
+        coefficients[2];
+        kwargs...,
+    )
+    return x, (; info)
+end
+
+function linsolve_updater(problem::ReducedPrecondLinearProblem, init; internal_kwargs, coefficients, kwargs...)
+    x, info = linsolve(
+        operator(problem.linear_problem),
+        constant_term(problem.linear_problem),
+        operator(problem.preconditioner),
         init,
         coefficients[1],
         coefficients[2];
@@ -68,3 +81,21 @@ function KrylovKit.linsolve(
     updater_kwargs = (; coefficients = (coefficient1, coefficient2), updater_kwargs...)
     return alternating_update(reduced_problem, init; updater, updater_kwargs, kwargs...)
 end
+
+function KrylovKit.linsolve(
+        operator,
+        constant_term::MPS,
+        preconditioner,
+        init::MPS,
+        coefficient1::Number = false,
+        coefficient2::Number = true;
+        updater = linsolve_updater,
+        updater_kwargs = (;),
+        kwargs...,
+    )
+    reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
+    updater_kwargs = (; coefficients = (coefficient1, coefficient2), updater_kwargs...)
+    return alternating_update(reduced_problem, init; updater, updater_kwargs, kwargs...)
+end
+
+
