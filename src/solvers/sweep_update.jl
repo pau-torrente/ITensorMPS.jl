@@ -230,6 +230,8 @@ function region_update!(
     )
     N = length(state)
     nsite = 1
+    handle_residual = reduced_operator isa ReducedPrecondLinearProblem
+
     # Do 'forwards' evolution step
     set_nsite!(reduced_operator, nsite)
     position!(reduced_operator, state, b)
@@ -244,10 +246,16 @@ function region_update!(
     normalize && (reduced_state /= norm(reduced_state))
     spec = nothing
     state[b] = reduced_state
+
+    if handle_residual
+        reduced_operator.residual[b] = info.residual
+    end
+
     if !is_half_sweep_done(direction, b, N; ncenter = nsite)
         # Move ortho center
         Δ = (isforward(direction) ? +1 : -1)
         orthogonalize!(state, b + Δ)
+        handle_residual && orthogonalize!(reduced_operator.residual, b + Δ)
     end
     return current_time, maxtruncerr, spec, info
 end
@@ -342,6 +350,8 @@ function region_update!(
     )
     N = length(state)
     nsite = 2
+    handle_residual = reduced_operator isa ReducedPrecondLinearProblem
+
     # Do 'forwards' evolution step
     set_nsite!(reduced_operator, nsite)
     position!(reduced_operator, state, b)
@@ -364,6 +374,20 @@ function region_update!(
         state,
         b,
         reduced_state;
+        maxdim,
+        mindim,
+        cutoff,
+        eigen_perturbation = drho,
+        ortho = ortho,
+        normalize,
+        which_decomp,
+        svd_alg,
+    )
+
+    handle_residual && replacebond!(
+        reduced_operator.residual, 
+        b, 
+        info.residual;
         maxdim,
         mindim,
         cutoff,
