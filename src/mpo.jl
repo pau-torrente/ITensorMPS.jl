@@ -776,6 +776,112 @@ function ITensors.contract(
     return ψ_out
 end
 
+# Helper function to build the environments obtained from the Khatri-Rao product
+function src_environments(A::MPO, ψ::MPS, sketchdim::Int)
+    N = length(A)
+    s = siteinds(ψ)
+    # We build them as a Vector{ITensor} instead of defining an explicit sketch Index as 
+    # it is much easier to handle the Khatri-Rao product in this way
+
+    Ωs = [[randomITensor(s[i]') for i in 1:N-1] for idx in 1:sketchdim]
+    
+    # envs[idx][i] stores the idx-th sketch index entry for the left environment at site i.
+    envs = Vector{Vector{ITensor}}(undef, sketchdim)
+    for idx in 1:sketchdim
+        env = ITensor[]
+        
+        # Site 1
+        C = Ωs[idx][1] * A[1] * ψ[1]
+        push!(env, C)
+        
+        # Sites 2 to n-1
+        for i in 2:N-1
+            C = C * Ωs[idx][i] * A[i] * ψ[i]
+            push!(env, C)
+        end
+        envs[idx] = env
+    end
+    return envs
+end
+
+# TODO Implement successive randomized compression by Camaño et al., test it and set it as default if it works well
+function ITensors.contract(
+        ::Algorithm"src",
+        A::MPO,
+        ψ::MPS;
+        cutoff = 1.0e-13,
+        maxdim = maxlinkdim(A) * maxlinkdim(ψ),
+        oversample = 0,
+        mindim = 1,
+        normalize = false,
+        kwargs...,
+    )::MPS
+    N = length(A)
+    N != length(ψ) &&
+        throw(DimensionMismatch("lengths of MPO ($N) and MPS ($(length(ψ))) do not match"))
+    if N == 1
+        return MPS([A[1] * ψ[1]])
+    end
+
+    η = MPS(N)
+    s = siteinds(ψ)
+    sketchdim = maxdim + oversample
+    Cs = src_environments(A, ψ, sketchdim)
+
+    # Right environment, depicted in pink in the paper
+    right_env = nothing 
+    
+    # 3. Backward Pass: Extract Orthogonal Sites via QR Decomposition
+    for j in N:-1:2
+        k_idx = Index(sketchdim, "Sketch")
+        # We need to handle Y first as a list since our envs are builts are lists, not with the sketch index
+        Y_list = ITensor[]
+        
+        # Form the sketched tensor Y^(j)
+        for idx in 1:sketchdim
+            # Contract left environment with the current MPO and MPS sites
+            temp = Cs[idx][j-1] * A[j] * ψ[j]
+            
+            # Contract with the right right_env (S^(j+1)) if we are not at the rightmost site
+            if right_env !== nothing
+                temp = temp * right_env
+            end
+            
+            # Stack the result along the artificial sketch index
+            push!(Y_list, temp * onehot(k_idx => idx))
+        end
+        
+        Y = sum(Y_list)
+        
+        # Define the indices that should form the new MPS tensor (Q)
+        # We want the physical index (s[j]') and the right link connecting to eta[j+1]
+        if right_env !== nothing
+            right_link = commonind(right_env, η[j+1])
+            right_inds = (s[j]', right_link)
+        else
+            right_inds = (s[j]',)
+        end
+        
+        # Orthonormalize the sketch: Y = R * Q (notice the inverse ordering, handled correctly by passing right_inds)
+        Q, R = qr(Y, right_inds; tags="Link,l=$(j-1)")
+        # Q, V, D = svd(Y, right_inds; cutoff=cutoff, maxdim=maxdim, tags="Link,l=$(j-1)")
+        @show Q
+        # Q forms our new orthogonal site tensor η^(j)
+        η[j] = Q
+        
+        # Form the new right environment: S^(j) = (η^(j))† * H[j] * ψ[j] * S^(j+1)
+        if right_env === nothing
+            right_env = dag(η[j]) * A[j] * ψ[j]
+        else
+            right_env = dag(η[j]) * A[j] * ψ[j] * right_env
+        end
+    end
+    η[1] = A[1] * ψ[1] * right_env
+    @show η
+    # truncate!(η; maxdim=maxdim, cutoff=cutoff)
+    return η
+end
+
 function _contract(::Algorithm"naive", A, ψ; truncate = true, kwargs...)
     A = sim(linkinds, A)
     ψ = sim(linkinds, ψ)
