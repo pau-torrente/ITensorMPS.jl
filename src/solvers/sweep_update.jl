@@ -247,15 +247,15 @@ function region_update!(
     spec = nothing
     state[b] = reduced_state
 
-    if handle_residual
-        reduced_operator.residual[b] = info.residual
-    end
+    # if handle_residual
+    #     reduced_operator.residual[b] = info.residual
+    # end
 
     if !is_half_sweep_done(direction, b, N; ncenter = nsite)
         # Move ortho center
         Δ = (isforward(direction) ? +1 : -1)
         orthogonalize!(state, b + Δ)
-        handle_residual && orthogonalize!(reduced_operator.residual, b + Δ)
+        # handle_residual && orthogonalize!(reduced_operator.residual, b + Δ)
     end
     return current_time, maxtruncerr, spec, info
 end
@@ -367,8 +367,12 @@ function region_update!(
     spec = nothing
     ortho = isforward(direction) ? "left" : "right"
     drho = nothing
+    residual_drho = nothing
     if noise > 0.0 && isforward(direction)
         drho = noise * noiseterm(reduced_operator, reduced_state, ortho)
+        if handle_residual
+            residual_drho = noise * noiseterm(reduced_operator.preconditioner, info.residual, ortho)
+        end
     end
     spec = replacebond!(
         state,
@@ -384,19 +388,20 @@ function region_update!(
         svd_alg,
     )
 
-    handle_residual && replacebond!(
-        reduced_operator.residual, 
-        b, 
-        info.residual;
-        maxdim,
-        mindim,
-        cutoff,
-        eigen_perturbation = drho,
-        ortho = ortho,
-        normalize,
-        which_decomp,
-        svd_alg,
-    )
+    # TODO Ensure that the residual MPS has the same maxdim & cutoff requirements as the solution MPS
+    # handle_residual && replacebond!(
+    #     reduced_operator.residual, 
+    #     b, 
+    #     info.residual;
+    #     maxdim,
+    #     mindim,
+    #     cutoff,
+    #     eigen_perturbation = residual_drho,
+    #     ortho = ortho,
+    #     normalize,
+    #     which_decomp,
+    #     svd_alg,
+    # )
     maxtruncerr = max(maxtruncerr, spec.truncerr)
     return current_time, maxtruncerr, spec, info
 end

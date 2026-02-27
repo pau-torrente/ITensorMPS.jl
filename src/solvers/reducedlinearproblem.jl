@@ -91,7 +91,7 @@ end
 
 function Base.copy(reduced_problem::ReducedPrecondLinearProblem)
     return ReducedPrecondLinearProblem(
-        copy(reduced_problem.linear_problem), copy(reduced_problem.preconditioner), residual = copy(reduced_problem.residual)
+        copy(reduced_problem.linear_problem), copy(reduced_problem.preconditioner), copy(reduced_problem.residual)
     )
 end
 
@@ -105,14 +105,17 @@ function ITensorMPS.set_nsite!(reduced_problem::ReducedPrecondLinearProblem, nsi
     return reduced_problem
 end
 
+# TODO THIS CANNOT WORK BECAUSE THE RESIDUAL AND X DO NOT SHARE INDICES
 function ITensorMPS.makeL!(reduced_problem::ReducedPrecondLinearProblem, state::MPS, position::Int)
     makeL!(reduced_problem.linear_problem, state, position)
-    makeL!(reduced_problem.preconditioner, reduced_problem.residual, position)
+    # makeL!(reduced_problem.preconditioner, reduced_problem.residual, position)
+    makeL!(reduced_problem.preconditioner, state, position)
     return reduced_problem
 end
 
 function ITensorMPS.makeR!(reduced_problem::ReducedPrecondLinearProblem, state::MPS, position::Int)
     makeR!(reduced_problem.linear_problem, state, position)
-    makeR!(reduced_problem.preconditioner, reduced_problem.residual, position)
+    # makeR!(reduced_problem.preconditioner, reduced_problem.residual, position)
+    makeR!(reduced_problem.preconditioner, state, position)
     return reduced_problem
 end
