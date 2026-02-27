@@ -1,7 +1,10 @@
 using KrylovKit: KrylovKit, linsolve
 using LinearAlgebra: I, qr
 
+# compute_cond = true converts the reduced & projected operator into a matrix and computes the condition number exactly. It is very costly, but useful for development purposes
 function krylov_updater(problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...)
+    compute_cond = get(kwargs, :compute_cond, false)
+    kwargs = filter(p -> first(p) != :compute_cond, kwargs)
     x, info = linsolve(
         operator(problem),
         constant_term(problem),
@@ -10,10 +13,28 @@ function krylov_updater(problem::ReducedLinearProblem, init; internal_kwargs, co
         coefficients[2];
         kwargs...,
     )
+    if compute_cond
+        op = contract(operator(problem))
+        b = constant_term(problem)
+
+        rowinds = commoninds(op, b)
+        colinds = uniqueinds(op, b)
+
+        rowdim = prod(dim.(rowinds))
+        coldim = prod(dim.(colinds))
+
+        Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
+
+        eig_solution = eigen(Amat)
+        abs_evalues = sort(abs.(eig_solution.values))
+        @show last(abs_evalues) / first(abs_evalues)
+    end
     return x, (; info)
 end
 
 function krylov_updater(problem::ReducedPrecondLinearProblem, init; internal_kwargs, coefficients, kwargs...)
+    compute_cond = false
+    kwargs = filter(p -> first(p) != :compute_cond, kwargs)
     x, info = linsolve(
         operator(problem.linear_problem),
         constant_term(problem.linear_problem),
@@ -23,8 +44,23 @@ function krylov_updater(problem::ReducedPrecondLinearProblem, init; internal_kwa
         coefficients[2];
         kwargs...,
     )
+    if compute_cond
+        op = contract(operator(problem))
+        b = constant_term(problem)
 
-    return x, (; info)
+        rowinds = commoninds(op, b)
+        colinds = uniqueinds(op, b)
+
+        rowdim = prod(dim.(rowinds))
+        coldim = prod(dim.(colinds))
+
+        Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
+
+        eig_solution = eigen(Amat)
+        abs_evalues = sort(abs.(eig_solution.values))
+        @show last(abs_evalues) / first(abs_evalues)
+    end
+    return x, (; info, residual = info.residual)
 end
 
 function qr_updater(
@@ -47,7 +83,9 @@ function qr_updater(
     decomp_Amat = qr(shifted_Amat)
     x = decomp_Amat \ bvec
 
-    return noprime(ITensor(x, colinds...)), (;)
+    residual = norm(shifted_Amat * x - bvec)
+    @show residual
+    return noprime(ITensor(x, colinds...)), (; residual)
 end
 
 """
@@ -100,9 +138,11 @@ function KrylovKit.linsolve(
         updater_kwargs = (;),
         kwargs...,
     )
-    reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
+    # Provisional bruteforce approach to test performance
+    # reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
+    preconditioned_operator = apply(preconditioner, operator; maxdim = maxlinkdim(operator))
+    preconditioner_constterm = apply(preconditioner, constant_term; maxdim = maxlinkdim(constant_term))
+    reduced_precond_problem = ReducedLinearProblem(preconditioned_operator, preconditioner_constterm)
     updater_kwargs = (; coefficients = (coefficient1, coefficient2), updater_kwargs...)
     return alternating_update(reduced_precond_problem, init; updater, updater_kwargs, kwargs...)
 end
-
-
