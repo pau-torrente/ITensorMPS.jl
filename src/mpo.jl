@@ -863,21 +863,24 @@ function ITensors.contract(
         end
         
         # Orthonormalize the sketch: Y = R * Q (notice the inverse ordering, handled correctly by passing right_inds)
-        Q, R = qr(Y, right_inds; tags="Link,l=$(j-1)")
-        # Q, V, D = svd(Y, right_inds; cutoff=cutoff, maxdim=maxdim, tags="Link,l=$(j-1)")
-        @show Q
+        # Q, R = qr(Y, right_inds; tags="Link,l=$(j-1)")
+        Q, V, D = svd(Y, right_inds; cutoff=cutoff, maxdim=maxdim, utags="Link,l=$(j-1)")
         # Q forms our new orthogonal site tensor η^(j)
         η[j] = Q
         
         # Form the new right environment: S^(j) = (η^(j))† * H[j] * ψ[j] * S^(j+1)
         if right_env === nothing
-            right_env = dag(η[j]) * A[j] * ψ[j]
+            right_env = dag(η[j]) * A[j]
+            right_env = right_env * ψ[j]
+
         else
-            right_env = dag(η[j]) * A[j] * ψ[j] * right_env
+            right_env = dag(η[j]) * right_env
+            right_env = right_env * A[j]
+            right_env = right_env * ψ[j] 
+
         end
     end
     η[1] = A[1] * ψ[1] * right_env
-    @show η
     # truncate!(η; maxdim=maxdim, cutoff=cutoff)
     return η
 end

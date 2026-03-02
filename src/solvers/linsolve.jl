@@ -83,8 +83,6 @@ function qr_updater(
     decomp_Amat = qr(shifted_Amat)
     x = decomp_Amat \ bvec
 
-    residual = norm(shifted_Amat * x - bvec)
-    @show residual
     return noprime(ITensor(x, colinds...)), (; residual)
 end
 
@@ -139,10 +137,10 @@ function KrylovKit.linsolve(
         kwargs...,
     )
     # Provisional bruteforce approach to test performance
-    # reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
-    preconditioned_operator = apply(preconditioner, operator; maxdim = maxlinkdim(operator))
-    preconditioner_constterm = apply(preconditioner, constant_term; maxdim = maxlinkdim(constant_term))
-    reduced_precond_problem = ReducedLinearProblem(preconditioned_operator, preconditioner_constterm)
+    reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
+    # preconditioned_operator = apply(preconditioner, operator; maxdim = maxlinkdim(operator))
+    # preconditioner_constterm = apply(preconditioner, constant_term; maxdim = maxlinkdim(constant_term))
+    # reduced_precond_problem = ReducedLinearProblem(preconditioned_operator, preconditioner_constterm)
     updater_kwargs = (; coefficients = (coefficient1, coefficient2), updater_kwargs...)
     return alternating_update(reduced_precond_problem, init; updater, updater_kwargs, kwargs...)
 end

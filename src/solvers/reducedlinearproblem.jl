@@ -105,7 +105,7 @@ function ITensorMPS.set_nsite!(reduced_problem::ReducedPrecondLinearProblem, nsi
     return reduced_problem
 end
 
-# TODO THIS CANNOT WORK BECAUSE THE RESIDUAL AND X DO NOT SHARE INDICES
+# TODO TRACKING A RESIDUALS MPS CANNOT WORK BECAUSE THE RESIDUAL AND X DO NOT SHARE INDICES
 function ITensorMPS.makeL!(reduced_problem::ReducedPrecondLinearProblem, state::MPS, position::Int)
     makeL!(reduced_problem.linear_problem, state, position)
     # makeL!(reduced_problem.preconditioner, reduced_problem.residual, position)
