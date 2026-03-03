@@ -780,31 +780,30 @@ end
 function src_environments(A::MPO, ψ::MPS, sketchdim::Int)
     N = length(A)
     s = siteinds(ψ)
-    # We build them as a Vector{ITensor} instead of defining an explicit sketch Index as 
-    # it is much easier to handle the Khatri-Rao product in this way
 
-    Ωs = [[randomITensor(s[i]') for i in 1:N-1] for idx in 1:sketchdim]
+    sketch_idx = Index(sketchdim, "Sketch")
+
+    sketch_idx_prime = prime(sketch_idx)
+    sketch_idx_dprime = prime(sketch_idx, 2)
     
-    # envs[idx][i] stores the idx-th sketch index entry for the left environment at site i.
-    envs = Vector{Vector{ITensor}}(undef, sketchdim)
-    for idx in 1:sketchdim
-        env = ITensor[]
-        
-        # Site 1
-        C = Ωs[idx][1] * A[1] * ψ[1]
-        push!(env, C)
-        
-        # Sites 2 to n-1
-        for i in 2:N-1
-            C = C * Ωs[idx][i] * A[i] * ψ[i]
-            push!(env, C)
-        end
-        envs[idx] = env
-    end
-    return envs
+    #performing the hadamard over the sketched index with a delta is extreeeeemely costly -> 
+    Δ = delta(sketch_idx, sketch_idx_prime, sketch_idx_dprime)
+
+    Cs = Vector{ITensor}(undef, N)   
+    
+    Ω1 = random_itensor(s[1]', sketch_idx)
+    Cs[1] = Ω1 * A[1] * ψ[1]
+
+    for i in 2:N-1
+        Ωi = random_itensor(s[i]', sketch_idx_prime)
+        Cstep = Ωi * Δ 
+        Cstep = Cstep * Cs[i-1] # Elementwise product with output index sketch_idx_dprime
+        Cs[i] = replaceind(Cstep, sketch_idx_dprime => sketch_idx) * A[i] * ψ[i]
+
+    end  
+    return Cs
 end
 
-# TODO Implement successive randomized compression by Camaño et al., test it and set it as default if it works well
 function ITensors.contract(
         ::Algorithm"src",
         A::MPO,
@@ -835,32 +834,14 @@ function ITensors.contract(
     for j in N:-1:2
         k_idx = Index(sketchdim, "Sketch")
         # We need to handle Y first as a list since our envs are builts are lists, not with the sketch index
-        Y_list = ITensor[]
-        
-        # Form the sketched tensor Y^(j)
-        for idx in 1:sketchdim
-            # Contract left environment with the current MPO and MPS sites
-            temp = Cs[idx][j-1] * A[j] * ψ[j]
-            
-            # Contract with the right right_env (S^(j+1)) if we are not at the rightmost site
-            if right_env !== nothing
-                temp = temp * right_env
-            end
-            
-            # Stack the result along the artificial sketch index
-            push!(Y_list, temp * onehot(k_idx => idx))
-        end
-        
-        Y = sum(Y_list)
-        
-        # Define the indices that should form the new MPS tensor (Q)
-        # We want the physical index (s[j]') and the right link connecting to eta[j+1]
+        Y = Cs[j-1] * A[j] * ψ[j]
         if right_env !== nothing
+            Y = Y * right_env
             right_link = commonind(right_env, η[j+1])
             right_inds = (s[j]', right_link)
         else
             right_inds = (s[j]',)
-        end
+        end 
         
         # Orthonormalize the sketch: Y = R * Q (notice the inverse ordering, handled correctly by passing right_inds)
         # Q, R = qr(Y, right_inds; tags="Link,l=$(j-1)")
@@ -869,16 +850,8 @@ function ITensors.contract(
         η[j] = Q
         
         # Form the new right environment: S^(j) = (η^(j))† * H[j] * ψ[j] * S^(j+1)
-        if right_env === nothing
-            right_env = dag(η[j]) * A[j]
-            right_env = right_env * ψ[j]
-
-        else
-            right_env = dag(η[j]) * right_env
-            right_env = right_env * A[j]
-            right_env = right_env * ψ[j] 
-
-        end
+            
+        right_env = isnothing(right_env) ? dag(η[j]) * A[j] * ψ[j] : dag(η[j]) * A[j] * ψ[j] * right_env
     end
     η[1] = A[1] * ψ[1] * right_env
     # truncate!(η; maxdim=maxdim, cutoff=cutoff)
