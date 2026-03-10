@@ -1,10 +1,11 @@
 using KrylovKit: KrylovKit, linsolve
-using LinearAlgebra: I, qr
+using LinearAlgebra: I, qr, eigvals, Symmetric
 
 # compute_cond = true converts the reduced & projected operator into a matrix and computes the condition number exactly. It is very costly, but useful for development purposes
 function krylov_updater(problem::ReducedLinearProblem, init; internal_kwargs, coefficients, kwargs...)
     compute_cond = get(kwargs, :compute_cond, false)
     kwargs = filter(p -> first(p) != :compute_cond, kwargs)
+
     x, info = linsolve(
         operator(problem),
         constant_term(problem),
@@ -14,53 +15,122 @@ function krylov_updater(problem::ReducedLinearProblem, init; internal_kwargs, co
         kwargs...,
     )
     if compute_cond
-        op = contract(operator(problem))
-        b = constant_term(problem)
+        # op = contract(operator(problem))
+        # b = constant_term(problem)
 
-        rowinds = commoninds(op, b)
-        colinds = uniqueinds(op, b)
+        # rowinds = commoninds(op, b)
+        # colinds = uniqueinds(op, b)
 
-        rowdim = prod(dim.(rowinds))
-        coldim = prod(dim.(colinds))
+        # rowdim = prod(dim.(rowinds))
+        # coldim = prod(dim.(colinds))
 
-        Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
-
-        eig_solution = eigen(Amat)
-        abs_evalues = sort(abs.(eig_solution.values))
-        @show last(abs_evalues) / first(abs_evalues)
-    end
-    return x, (; info)
-end
-
-function krylov_updater(problem::ReducedPrecondLinearProblem, init; internal_kwargs, coefficients, kwargs...)
-    compute_cond = get(kwargs, :compute_cond, false)
-    if compute_cond
-        op = contract(operator(problem.linear_problem))
-        b = constant_term(problem.linear_problem)
-        preconditioner = contract(problem.preconditioner)
-
-        rowinds = commoninds(op, b)
-        colinds = uniqueinds(op, b)
-
-        rowdim = prod(dim.(rowinds))
-        coldim = prod(dim.(colinds))
-
-        Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
-        M⁻¹mat = reshape(array(preconditioner, rowinds..., colinds...), rowdim, coldim)
+        # Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
 
         # eig_solution = eigen(Amat)
         # abs_evalues = sort(abs.(eig_solution.values))
         # op_condition_number = last(abs_evalues) / first(abs_evalues)
         # @show op_condition_number
-        # @show any(abs.(eig_solution.values) .< 0.0)
+        # @show first(sort(real.(eig_solution.values)))
+        op = contract(operator(problem))
+        b_tensor = constant_term(problem)
+        rowinds = commoninds(op, b_tensor)
+        colinds = uniqueinds(op, b_tensor)
+        rowdim = prod(dim.(rowinds))
+        coldim = prod(dim.(colinds))
+        op_mat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
+        op_sym = Symmetric(0.5 * (op_mat + transpose(op_mat)))
+        eigs_op = eigvals(op_sym)
+        min_op_eig = minimum(eigs_op)
 
-        eig_solution = eigen(M⁻¹mat)
+        if min_op_eig < 0
+            @error "OPERATOR IS NOT SPD!" min_op_eig pos=problem.reduced_operator.lpos
+        end
+
+        @show problem.reduced_operator.lpos, min_op_eig, maximum(eigs_op)
+    end
+    return x, (; info)
+end
+
+function krylov_updater(problem::ReducedPrecondLinearProblem, init; internal_kwargs, coefficients, kwargs...)
+
+    # @show problem.linear_problem.reduced_operator.lpos, problem.linear_problem.reduced_operator.rpos
+    # @show problem.preconditioner.lpos, problem.preconditioner.rpos
+    
+    # # Verify the preconditioner is SPD at THIS bond during the sweep
+    # op = contract(operator(problem.linear_problem))
+    # prec = contract(problem.preconditioner)
+    # b = constant_term(problem.linear_problem)
+    
+    # rowinds = commoninds(op, b)
+    # colinds = uniqueinds(op, b)
+    # rowdim = prod(dim.(rowinds))
+    # coldim = prod(dim.(colinds))
+    
+    # op_mat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
+    # prec_mat = reshape(array(prec, rowinds..., colinds...), rowdim, coldim)
+    
+    # product_eigs = eigvals(prec_mat * op_mat)
+    # @show minimum(real.(product_eigs)), maximum(real.(product_eigs))
+    
+    # # Also check: what are the operator eigenvalues?
+    # op_eigs = eigvals(op_mat)
+    # @show minimum(real.(op_eigs)), maximum(real.(op_eigs))
+    
+    # # What should M⁻¹ eigenvalues be for perfect preconditioning?
+    # @show 1.0/maximum(real.(op_eigs)), 1.0/minimum(real.(op_eigs))
+
+    compute_cond = get(kwargs, :compute_cond, false)
+    if compute_cond
+        # op = contract(operator(problem.linear_problem))
+        # b = constant_term(problem.linear_problem)
+        # preconditioner = contract(problem.preconditioner)
+
+        # rowinds = commoninds(op, b)
+        # colinds = uniqueinds(op, b)
+
+        # rowdim = prod(dim.(rowinds))
+        # coldim = prod(dim.(colinds))
+
+        # Amat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
+        # M⁻¹mat = reshape(array(preconditioner, rowinds..., colinds...), rowdim, coldim)
+
+        # eig_solution = eigen(Amat)
+        # abs_evalues = sort(abs.(eig_solution.values))
+        # op_condition_number = last(abs_evalues) / first(abs_evalues)
+        # @show op_condition_number
+        # @show first(sort(real.(eig_solution.values)))
+
+        # eig_solution = eigen(M⁻¹mat)
         # abs_evalues = sort(abs.(eig_solution.values))
         # precond_condition_number = last(abs_evalues) / first(abs_evalues)
         # @show precond_condition_number
-        @show first(sort(eig_solution.values))
-        # @show any(abs.(eig_solution.values) .< 0.0)
+        # @show first(sort(real.(eig_solution.values)))
+        op = contract(operator(problem.linear_problem))
+        b_tensor = constant_term(problem.linear_problem)
+        rowinds = commoninds(op, b_tensor)
+        colinds = uniqueinds(op, b_tensor)
+        rowdim = prod(dim.(rowinds))
+        coldim = prod(dim.(colinds))
+        op_mat = reshape(array(op, rowinds..., colinds...), rowdim, coldim)
+        op_sym = Symmetric(0.5 * (op_mat + transpose(op_mat)))
+        eigs_op = eigvals(op_sym)
+        min_op_eig = minimum(eigs_op)
 
+        pc = contract(problem.preconditioner)
+        pc_mat = reshape(array(pc, rowinds..., colinds...), rowdim, coldim)
+        pc_sym = Symmetric(0.5 * (pc_mat + transpose(pc_mat)))
+        eigs_pc = eigvals(pc_sym)
+        min_pc_eig = minimum(eigs_pc)
+
+        if min_op_eig < 0
+            @error "OPERATOR IS NOT SPD!" min_op_eig pos=problem.linear_problem.reduced_operator.lpos
+        end
+        
+        if min_pc_eig < 0
+            @error "Preconditioner IS NOT SPD!" min_pc_eig pos=problem.linear_problem.reduced_operator.lpos
+        end
+
+        @show problem.linear_problem.reduced_operator.lpos, min_op_eig, maximum(eigs_op), min_pc_eig, maximum(eigs_pc)
     end
 
     kwargs = filter(p -> first(p) != :compute_cond, kwargs)
@@ -73,6 +143,7 @@ function krylov_updater(problem::ReducedPrecondLinearProblem, init; internal_kwa
         coefficients[2];
         kwargs...,
     )
+    sleep(3)
     return x, (; info, residual = info.residual)
 end
 
@@ -140,7 +211,7 @@ end
 
 function KrylovKit.linsolve(
         operator,
-        constant_term::MPS,
+        const_term::MPS,
         init::MPS,
         preconditioner,
         coefficient1::Number = false,
@@ -150,10 +221,44 @@ function KrylovKit.linsolve(
         kwargs...,
     )
     # Provisional bruteforce approach to test performance
-    reduced_precond_problem = ReducedPrecondLinearProblem(operator, constant_term, preconditioner)
+    reduced_precond_problem = ReducedPrecondLinearProblem(operator, const_term, preconditioner)
     # preconditioned_operator = apply(preconditioner, operator; maxdim = maxlinkdim(operator))
     # preconditioner_constterm = apply(preconditioner, constant_term; maxdim = maxlinkdim(constant_term))
     # reduced_precond_problem = ReducedLinearProblem(preconditioned_operator, preconditioner_constterm)
     updater_kwargs = (; coefficients = (coefficient1, coefficient2), updater_kwargs...)
+
+    # ...existing code...
+
+
+    # precond_problem = ReducedPrecondLinearProblem(operator, const_term, preconditioner)
+
+    # set_nsite!(precond_problem, 2)
+
+    # for pos in 1:(length(init)-1)
+    #     orthogonalize!(init, pos)
+    #     position!(precond_problem, init, pos)
+    #     opp = contract(precond_problem.preconditioner)
+    #     b = constant_term(precond_problem.linear_problem)
+        
+    #     rowinds = commoninds(opp, b)
+    #     colinds = uniqueinds(opp, b)
+    #     rowdim = prod(dim.(rowinds))
+    #     coldim = prod(dim.(colinds))
+        
+    #     opp_mat = reshape(array(opp, rowinds..., colinds...), rowdim, coldim)
+    #     opp_eigenvals = eigvals(opp_mat)
+    #     min_eig = minimum(opp_eigenvals)
+    #     max_eig = maximum(opp_eigenvals)
+    #     @show pos, min_eig, max_eig, min_eig/max_eig
+
+    #     # Check symmetry
+    #     @show norm(opp_mat - transpose(opp_mat)) / norm(opp_mat)
+    #     # Check eigenvalues of the UNSYMMETRIZED matrix
+    #     @show minimum(real.(eigvals(opp_mat)))
+    #     # Check eigenvalues of the symmetric part
+    #     @show minimum(eigvals(Symmetric(0.5 * (opp_mat + transpose(opp_mat)))))
+
+    # end
+
     return alternating_update(reduced_precond_problem, init; updater, updater_kwargs, kwargs...)
 end

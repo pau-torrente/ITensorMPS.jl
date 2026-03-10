@@ -234,6 +234,31 @@ function region_update!(
 
     # Do 'forwards' evolution step
     set_nsite!(reduced_operator, nsite)
+
+    N = length(state)
+
+    # Check left environment tensors are isometric
+    for j in 1:b-1
+        A = state[j]
+        linds = uniqueinds(A, state[j + 1])  # or appropriate indices
+        ID = A * dag(prime(A, linds))
+        deviation = norm(ID - delta(inds(ID)))
+        if deviation > 1e-10
+            @warn "Site $j NOT left-orthogonal: deviation=$deviation"
+        end
+    end
+
+    # Check right environment tensors are isometric
+    for j in N:-1:b+1
+        A = state[j]
+        rinds = uniqueinds(A, state[j-1])
+        ID = A * dag(prime(A, rinds))
+        deviation = norm(ID - delta(inds(ID)))
+        if deviation > 1e-10
+            @warn "Site $j NOT right-orthogonal: deviation=$deviation"
+        end
+    end
+
     position!(reduced_operator, state, b)
     reduced_state = state[b]
     internal_kwargs = (; current_time, time_step, outputlevel)
@@ -257,6 +282,7 @@ function region_update!(
         orthogonalize!(state, b + Δ)
         # handle_residual && orthogonalize!(reduced_operator.residual, b + Δ)
     end
+
     return current_time, maxtruncerr, spec, info
 end
 
@@ -351,10 +377,38 @@ function region_update!(
     N = length(state)
     nsite = 2
     handle_residual = reduced_operator isa ReducedPrecondLinearProblem
-
+    display(b)
     # Do 'forwards' evolution step
     set_nsite!(reduced_operator, nsite)
+
+    N = length(state)
+
+    # Check left environment tensors are isometric
+    for j in 1:b-1
+        A = state[j]
+        linds = commoninds(A, state[j + 1])  # or appropriate indices
+        ID = A * dag(prime(A, linds))
+        @show ID
+        deviation = norm(ID - delta(inds(ID)))
+        if deviation > 1e-10
+            @warn "Site $j NOT left-orthogonal: deviation=$deviation"
+        end
+    end
+
+    # Check right environment tensors are isometric
+    for j in N:-1:b+1
+        A = state[j]
+        rinds = commoninds(A, state[j-1])
+        ID = A * dag(prime(A, rinds))
+        @show ID
+        deviation = norm(ID - delta(inds(ID)))
+        if deviation > 1e-10
+            @warn "Site $j  NOT right-orthogonal: deviation=$deviation"
+        end
+    end
+
     position!(reduced_operator, state, b)
+
     reduced_state = state[b] * state[b + 1]
     internal_kwargs = (; current_time, time_step, outputlevel)
     reduced_state, info = updater(
