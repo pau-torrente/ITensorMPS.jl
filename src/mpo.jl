@@ -783,26 +783,77 @@ function src_environments(A::MPO, ψ::MPS, sketchdim::Int)
 
     sketch_idx = Index(sketchdim, "Sketch")
 
-    sketch_idx_prime = prime(sketch_idx)
-    sketch_idx_dprime = prime(sketch_idx, 2)
+    # sketch_idx_prime = prime(sketch_idx)
+    # sketch_idx_dprime = prime(sketch_idx, 2)
     
-    #performing the hadamard over the sketched index with a delta is extreeeeemely costly -> 
-    Δ = delta(sketch_idx, sketch_idx_prime, sketch_idx_dprime)
+    # #performing the hadamard over the sketched index with a delta is extreeeeemely costly -> 
+    # Δ = delta(sketch_idx, sketch_idx_prime, sketch_idx_dprime)
 
     Cs = Vector{ITensor}(undef, N)   
     
-    Ω1 = random_itensor(s[1]', sketch_idx)
-    Cs[1] = Ω1 * A[1] * ψ[1]
+    # Ω1 = random_itensor(s[1]', sketch_idx)
+    # Cs[1] = Ω1 * A[1] * ψ[1]
 
-    for i in 2:N-1
-        Ωi = random_itensor(s[i]', sketch_idx_prime)
-        Cstep = Ωi * Δ 
-        Cstep = Cstep * Cs[i-1] # Elementwise product with output index sketch_idx_dprime
-        Cs[i] = replaceind(Cstep, sketch_idx_dprime => sketch_idx) * A[i] * ψ[i]
-
-    end  
+    # for i in 2:N-1
+    #     Ωi = random_itensor(s[i]', sketch_idx_prime)
+    #     # C = A[i] * ψ[i] * Ωi * Cs[i-1] * Δ # Elementwise product with output index sketch_idx_dprime
+    #     C = (Δ * Ωi) * (A[i] * (ψ[i] * Cs[i-1])) # Elementwise product with output index sketch_idx_dprime
+        
+    #     Cs[i] = replaceind(C, sketch_idx_dprime => sketch_idx)
+    # end  
+    for i in 1:N-1
+        Cs[i] = random_itensor(sketch_idx, linkind(A, i), linkind(ψ, i))
+    end
     return Cs
 end
+
+# function src_environments(A::MPO, ψ::MPS, sketchdim::Int)
+#     N = length(A)
+#     s = siteinds(ψ)
+#     sketch_idx = Index(sketchdim, "Sketch")
+
+#     Cs = Vector{ITensor}(undef, N)   
+    
+#     Ω1 = random_itensor(s[1]', sketch_idx)
+#     Cs[1] = Ω1 * A[1] * ψ[1]
+
+#     for i in 2:N-1
+#         # 1. Pre-contract the physical site tensors (Heavy BLAS operation)
+#         # This creates an intermediate mapping the left links to the right links.
+#         Aψ = A[i] * ψ[i] 
+
+#         # 2. Contract the previous environment with Aψ
+#         # This operates on the full batch at once.
+#         # Cost is O(\overline{\chi} * d * D^2 * \chi^2) - highly efficient!
+#         C_Aψ = Cs[i-1] * Aψ
+
+#         # 3. Generate the random sketching tensor for this site
+#         Ωi = random_itensor(s[i]', sketch_idx)
+
+#         # 4. Slice-and-sum to perform the batched element-wise multiplication
+#         # This completely avoids forming a \overline{\chi}^2 dense intermediate.
+#         C_next_slices = ITensor[]
+#         for k in 1:sketchdim
+#             k_state = onehot(sketch_idx => k)
+            
+#             # Project out the k-th slice from our heavy intermediate
+#             C_Aψ_k = C_Aψ * k_state
+            
+#             # Project out the k-th slice from the random tensor
+#             Ωi_k = Ωi * k_state
+            
+#             # Contract the physical index s[i]' for this specific slice
+#             C_next_k = C_Aψ_k * Ωi_k
+            
+#             # Re-attach the sketch state and collect
+#             push!(C_next_slices, C_next_k * k_state)
+#         end
+        
+#         # Sum the slices to form the final environment C^(i)
+#         Cs[i] = sum(C_next_slices)
+#     end     
+#     return Cs
+# end
 
 function ITensors.contract(
         ::Algorithm"src",
@@ -834,12 +885,13 @@ function ITensors.contract(
     for j in N:-1:2
         k_idx = Index(sketchdim, "Sketch")
         # We need to handle Y first as a list since our envs are builts are lists, not with the sketch index
-        Y = Cs[j-1] * A[j] * ψ[j]
+        
         if right_env !== nothing
-            Y = Y * right_env
+            Y = Y = Cs[j-1] * A[j] * ψ[j] * right_env
             right_link = commonind(right_env, η[j+1])
             right_inds = (s[j]', right_link)
         else
+            Y = Cs[j-1] * A[j] * ψ[j]
             right_inds = (s[j]',)
         end 
         
@@ -857,6 +909,122 @@ function ITensors.contract(
     # truncate!(η; maxdim=maxdim, cutoff=cutoff)
     return η
 end
+
+
+# Helper function to build the environments obtained from the Khatri-Rao product
+# function src_environments(A::MPO, ψ::MPS, sketch_ind::Index)
+#     N = length(A)
+#     s = siteinds(ψ)
+#     sketchdim = dim(sk)
+#     # We build them as a Vector{ITensor} instead of defining an explicit sketch Index as 
+#     # it is much easier to handle the Khatri-Rao product in this way
+
+#     Ω1 = random_itensor(s[1]', )
+#     Ωs = [[randomITensor(s[i]') for _ in 1:sketchdim] for i in 2:N-1]
+    
+#     # envs[idx][i] stores the idx-th sketch index entry for the left environment at site i.
+#     envs = Vector{ITensor}(undef, N)
+
+#     Ω1 = sum([])
+
+#     for i in 1:N
+#         env = ITensor[]
+#         for idx in 1:sketchdim
+
+#     for idx in 1:sketchdim
+#         env = ITensor[]
+        
+#         # Site 1
+#         C = Ωs[idx][1] * A[1] * ψ[1]
+#         push!(env, C)
+        
+#         # Sites 2 to n-1
+#         for i in 2:N-1
+#             C = C * Ωs[idx][i] * A[i] * ψ[i]
+#             push!(env, C)
+#         end
+#         envs[idx] = env
+#     end
+#     return envs
+
+
+# end
+
+# # TODO Implement successive randomized compression by Camaño et al., test it and set it as default if it works well
+# function ITensors.contract(
+#         ::Algorithm"src",
+#         A::MPO,
+#         ψ::MPS;
+#         cutoff = 1.0e-13,
+#         maxdim = maxlinkdim(A) * maxlinkdim(ψ),
+#         oversample = 0,
+#         mindim = 1,
+#         normalize = false,
+#         kwargs...,
+#     )::MPS
+#     N = length(A)
+#     N != length(ψ) &&
+#         throw(DimensionMismatch("lengths of MPO ($N) and MPS ($(length(ψ))) do not match"))
+#     if N == 1
+#         return MPS([A[1] * ψ[1]])
+#     end
+
+#     η = MPS(N)
+#     s = siteinds(ψ)
+#     sketchdim = maxdim + oversample
+#     Cs = src_environments(A, ψ, sketchdim)
+
+#     # Right environment, depicted in pink in the paper
+#     right_env = nothing 
+    
+#     # 3. Backward Pass: Extract Orthogonal Sites via QR Decomposition
+#     for j in N:-1:2
+#         k_idx = Index(sketchdim, "Sketch")
+#         # We need to handle Y first as a list since our envs are builts are lists, not with the sketch index
+#         Y_list = ITensor[]
+        
+#         # Form the sketched tensor Y^(j)
+#         for idx in 1:sketchdim
+#             # Contract left environment with the current MPO and MPS sites
+#             temp = Cs[idx][j-1] * A[j] * ψ[j]
+            
+#             # Contract with the right right_env (S^(j+1)) if we are not at the rightmost site
+#             if right_env !== nothing
+#                 temp = temp * right_env
+#             end
+            
+#             # Stack the result along the artificial sketch index
+#             push!(Y_list, temp * onehot(k_idx => idx))
+#         end
+        
+#         Y = sum(Y_list)
+        
+#         # Define the indices that should form the new MPS tensor (Q)
+#         # We want the physical index (s[j]') and the right link connecting to eta[j+1]
+#         if right_env !== nothing
+#             right_link = commonind(right_env, η[j+1])
+#             right_inds = (s[j]', right_link)
+#         else
+#             right_inds = (s[j]',)
+#         end
+        
+#         # Orthonormalize the sketch: Y = R * Q (notice the inverse ordering, handled correctly by passing right_inds)
+#         # Q, R = qr(Y, right_inds; tags="Link,l=$(j-1)")
+#         Q, V, D = svd(Y, right_inds; cutoff=cutoff, maxdim=maxdim, utags="Link,l=$(j-1)")
+#         # Q forms our new orthogonal site tensor η^(j)
+#         η[j] = Q
+        
+#         # Form the new right environment: S^(j) = (η^(j))† * H[j] * ψ[j] * S^(j+1)
+#         if right_env === nothing
+#             right_env = dag(η[j]) * A[j] * ψ[j]
+#         else
+#             right_env = dag(η[j]) * A[j] * ψ[j] * right_env
+#         end
+#     end
+#     η[1] = A[1] * ψ[1] * right_env
+#     # truncate!(η; maxdim=maxdim, cutoff=cutoff)
+#     return η
+# end
 
 function _contract(::Algorithm"naive", A, ψ; truncate = true, kwargs...)
     A = sim(linkinds, A)
